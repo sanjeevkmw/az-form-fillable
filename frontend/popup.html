@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Popup API Call</title>
+  </head>
+  <body>
+    <button
+      onclick="window.open('http://localhost:3000/', 'popupWindow', 'width=1200,height=900');"
+    >
+      Open Popup from Local
+    </button>
+
+    <!--  pdf1page.pdf  OR  pdf4pages.pdf-->
+
+    <button
+      onclick="window.open('https://ctahbr265uxtu6rxb5dajjuwyq0urkht.lambda-url.ap-south-1.on.aws?pdf1page.pdf', 'popupWindow', 'width=1200,height=900');"
+    >
+      Open Popup from AWS
+    </button>
+  </body>
+</html>

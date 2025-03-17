@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interactive PDF Form Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf_viewer.min.css"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .wrapper {
+        position: relative;
+        width: 100%;
+        height: 800px;
+      }
+      #pdf-container {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border: 1px solid #ccc;
+        overflow: auto;
+      }
+      #pdf-viewer {
+        width: 100%;
+        height: 100%;
+      }
+      #form-actions {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Interactive PDF Form Viewer</h1>
+
+    <div id="form-actions">
+      <input type="file" id="pdf-upload" accept=".pdf" />
+      <button id="extract-values">Extract Form Values</button>
+      <button id="save-form">Save Form</button>
+    </div>
+    <div class="wrapper">
+      <div id="pdf-container">
+        <div id="pdf-viewer"></div>
+      </div>
+    </div>
+
+    <div id="extracted-values">
+      <h2>Extracted Form Values:</h2>
+      <pre id="values-output"></pre>
+    </div>
+
+    <!-- PDF.js Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.worker.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf_viewer.min.js"></script>
+
+    <script>
+      // PDF.js configuration
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.worker.min.js";
+
+      // DOM Elements
+      const pdfUpload = document.getElementById("pdf-upload");
+      const pdfViewer = document.getElementById("pdf-container");
+      const extractValuesBtn = document.getElementById("extract-values");
+      const saveFormBtn = document.getElementById("save-form");
+      const valuesOutput = document.getElementById("values-output");
+
+      // PDF Viewer Variables
+      let pdfDocument = null;
+      let pdfViwerInstance = null;
+      let currentPdfFile = null;
+
+      // Initialize PDF Viewer
+      function initPDFViewer() {
+        const eventBus = new pdfjsViewer.EventBus();
+        pdfViwerInstance = new pdfjsViewer.PDFViewer({
+          container: pdfViewer,
+          eventBus: eventBus,
+          annotationEditorMode: pdfjsLib.AnnotationEditorType.FORM_EDITOR,
+          annotationEditorHighlightColors: true,
+        });
+
+        eventBus.on("pagesinit", () => {
+          // Ensure the first page is rendered
+          pdfViwerInstance.currentScaleValue = "page-width";
+        });
+      }
+
+      // Initialize viewer on page load
+      initPDFViewer();
+
+      // File Upload Handler
+      pdfUpload.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          currentPdfFile = file;
+
+          try {
+            // Load PDF
+            const fileReader = new FileReader();
+            fileReader.onload = async (e) => {
+              const typedArray = new Uint8Array(e.target.result);
+
+              // Load PDF Document
+              pdfDocument = await pdfjsLib.getDocument({
+                data: typedArray,
+                enableForm: true,
+              }).promise;
+
+              // Set document for viewer
+              pdfViwerInstance.setDocument(pdfDocument);
+            };
+
+            // Read file as ArrayBuffer
+            fileReader.readAsArrayBuffer(file);
+          } catch (error) {
+            console.error("Error loading PDF:", error);
+            alert("Failed to load PDF. Please try again.");
+          }
+        }
+      });
+
+      // Extract Form Values
+      extractValuesBtn.addEventListener("click", async () => {
+        if (!pdfDocument) {
+          alert("Please upload a PDF first");
+          return;
+        }
+
+        try {
+          const formValues = {};
+
+          // Iterate through pages
+          for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+            const page = await pdfDocument.getPage(pageNum);
+            const annotations = await page.getAnnotations();
+
+            annotations.forEach((annotation) => {
+              // Check for form field annotations
+              if (annotation.subtype === "Widget" && annotation.fieldName) {
+                const fieldName = annotation.fieldName;
+
+                // Capture different types of form fields
+                switch (annotation.fieldType) {
+                  case "Tx": // Text field
+                    formValues[fieldName] = annotation.fieldValue || "";
+                    break;
+                  case "Btn": // Checkbox or radio button
+                    formValues[fieldName] =
+                      annotation.fieldValue === "Yes" ||
+                      annotation.fieldValue === true;
+                    break;
+                  case "Ch": // Dropdown or list box
+                    formValues[fieldName] = annotation.fieldValue || "";
+                    break;
+                }
+              }
+            });
+          }
+
+          // Display extracted values
+          valuesOutput.textContent = JSON.stringify(formValues, null, 2);
+          console.log("Extracted Form Values:", formValues);
+        } catch (error) {
+          console.error("Error extracting form values:", error);
+          valuesOutput.textContent = `Error: ${error.message}`;
+        }
+      });
+
+      // Save Form (download modified PDF)
+      saveFormBtn.addEventListener("click", async () => {
+        if (!pdfDocument) {
+          alert("Please upload a PDF first");
+          return;
+        }
+
+        try {
+          // Save the current state of the PDF
+          const updatedPdf = await pdfDocument.saveDocument();
+
+          // Create a blob and download
+          const blob = new Blob([updatedPdf], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = new Date() + "updated_form.pdf";
+          link.click();
+        } catch (error) {
+          console.error("Error saving PDF:", error);
+          alert("Failed to save PDF. Please try again.");
+        }
+      });
+    </script>
+  </body>
+</html>

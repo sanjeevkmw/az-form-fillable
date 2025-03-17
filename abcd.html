@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Interactive Multi-Page PDF Form Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf_viewer.min.css"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .wrapper {
+        position: relative;
+        width: 100%;
+        height: 800px;
+      }
+      #pdf-container {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border: 1px solid #ccc;
+        overflow: auto;
+      }
+      #pdf-viewer {
+        width: 100%;
+        height: 100%;
+      }
+      #form-actions {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+      }
+      .form-field {
+        position: absolute;
+        pointer-events: auto;
+        border: 1px solid blue;
+        background: rgba(0, 0, 255, 0.1);
+        z-index: 100;
+      }
+      .form-checkbox {
+        width: 16px;
+        height: 16px;
+      }
+      .form-select {
+        pointer-events: auto;
+        z-index: 100;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Interactive Multi-Page PDF Form Viewer</h1>
+
+    <div id="form-actions">
+      <input type="file" id="pdf-upload" accept=".pdf" />
+      <button id="extract-values">Extract Form Values</button>
+      <button id="save-form">Save Form</button>
+    </div>
+
+    <div class="wrapper">
+      <div id="pdf-container">
+        <div id="pdf-viewer" class="pdfViewer"></div>
+      </div>
+    </div>
+
+    <div id="extracted-values">
+      <h2>Extracted Form Values:</h2>
+      <pre id="values-output"></pre>
+    </div>
+
+    <!-- PDF.js Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.worker.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf_viewer.min.js"></script>
+
+    <script>
+      // PDF.js configuration
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.3.122/pdf.worker.min.js";
+
+      // DOM Elements
+      const pdfUpload = document.getElementById("pdf-upload");
+      const pdfViewer = document.getElementById("pdf-container");
+      const pdfViewerContainer = document.getElementById("pdf-viewer");
+      const extractValuesBtn = document.getElementById("extract-values");
+      const saveFormBtn = document.getElementById("save-form");
+      const valuesOutput = document.getElementById("values-output");
+
+      // PDF Viewer Variables
+      let pdfDocument = null;
+      let pdfViewerInstance = null;
+      let currentPdfFile = null;
+      let formFields = [];
+
+      // Initialize PDF Viewer
+      function initPDFViewer() {
+        const eventBus = new pdfjsViewer.EventBus();
+        pdfViewerInstance = new pdfjsViewer.PDFViewer({
+          container: pdfViewer,
+          eventBus: eventBus,
+          annotationEditorMode: pdfjsLib.AnnotationEditorType.FORM_EDITOR,
+        });
+
+        eventBus.on("pagesinit", () => {
+          pdfViewerInstance.currentScaleValue = "page-width";
+          // renderFormFields();
+        });
+
+        // Listen to page change events
+        /* eventBus.on('pagechanging', (evt) => {
+                renderFormFields(evt.pageNumber);
+            }); */
+      }
+
+      // Initialize viewer on page load
+      initPDFViewer();
+
+      // File Upload Handler
+      pdfUpload.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          currentPdfFile = file;
+
+          try {
+            const fileReader = new FileReader();
+            fileReader.onload = async (e) => {
+              const typedArray = new Uint8Array(e.target.result);
+
+              // Load PDF Document
+              pdfDocument = await pdfjsLib.getDocument({
+                data: typedArray,
+                enableForm: true,
+              }).promise;
+
+              // Set document for viewer
+              pdfViewerInstance.setDocument(pdfDocument);
+            };
+
+            // Read file as ArrayBuffer
+            fileReader.readAsArrayBuffer(file);
+          } catch (error) {
+            console.error("Error loading PDF:", error);
+            alert("Failed to load PDF. Please try again.");
+          }
+        }
+      });
+
+      // Extract Form Values
+      // Assuming `extractValuesBtn` and `valuesOutput` are already defined in your HTML
+      extractValuesBtn.addEventListener("click", async () => {
+        if (!pdfDoc) {
+          alert("Please upload a PDF first!");
+          return;
+        }
+
+        try {
+          const formValues = {};
+          const pdfForm = pdfDoc.getForm(); // Get PDF form
+
+          // Extract values from PDF form
+          pdfForm.getFields().forEach((field) => {
+            const fieldName = field.getName();
+            const pdfValue = field.getText() || "";
+            formValues[fieldName] = pdfValue; // Store original PDF value
+          });
+
+          // Override with UI values if they exist
+          document
+            .querySelectorAll("input[data-element-id], select[data-element-id]")
+            .forEach((el) => {
+              const fieldName = el.name || el.getAttribute("data-element-id"); // Match name or element ID
+              if (el.type === "checkbox") {
+                formValues[fieldName] = el.checked;
+              } else {
+                formValues[fieldName] = el.value;
+              }
+            });
+
+          // Display extracted values
+          valuesOutput.textContent = JSON.stringify(formValues, null, 2);
+          console.log("Extracted Form Values:", formValues);
+        } catch (error) {
+          console.error("Error extracting form values:", error);
+          valuesOutput.textContent = `Error: ${error.message}`;
+        }
+      });
+
+      // Save Form (download modified PDF)
+      saveFormBtn.addEventListener("click", async () => {
+        if (!pdfDocument) {
+          alert("Please upload a PDF first");
+          return;
+        }
+
+        try {
+          const numPages = pdfDocument.numPages;
+          const formValues = {};
+
+          // Loop through all pages to extract annotations
+          for (let i = 1; i <= numPages; i++) {
+            const page = await pdfDocument.getPage(i);
+            const annotations = await page.getAnnotations();
+
+            annotations.forEach((annotation) => {
+              if (annotation.fieldName) {
+                const fieldName = annotation.fieldName;
+
+                // Find the corresponding UI field
+                const safeSelector = `[data-field-name="${CSS.escape(
+                  fieldName
+                )}"]`;
+                const fieldElements = document.querySelectorAll(safeSelector);
+
+                if (fieldElements.length > 0) {
+                  // Get field type and update value
+                  if (fieldElements[0].type === "checkbox") {
+                    annotation.fieldValue = fieldElements[0].checked
+                      ? "On"
+                      : "Off";
+                  } else {
+                    annotation.fieldValue = fieldElements[0].value;
+                  }
+
+                  formValues[fieldName] = annotation.fieldValue; // Store updated values
+                }
+              }
+            });
+          }
+
+          // Save updated PDF
+          const updatedPdf = await pdfDocument.saveDocument();
+
+          // Create a Blob and trigger download
+          const blob = new Blob([updatedPdf], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `updated_form_${new Date().toISOString()}.pdf`;
+          link.click();
+
+          console.log("Updated Form Values:", formValues);
+        } catch (error) {
+          console.error("Error saving PDF:", error);
+          alert("Failed to save PDF. Please try again.");
+        }
+      });
+    </script>
+  </body>
+</html>
